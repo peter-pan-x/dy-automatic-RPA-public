@@ -1,0 +1,37 @@
+{
+  "export_time": "2025-11-15T18:04:23.236400",
+  "runtime_info": {
+    "total_runtime": "1:53:54.899973",
+    "current_session_duration": "0:00:49.730787",
+    "sessions_completed": 659,
+    "start_time": "2025-11-15 16:10:28",
+    "last_activity": "2025-11-15 18:03:30"
+  },
+  "current_stats": {
+    "sessions_completed": 659,
+    "videos_watched": 44,
+    "likes_given": 3,
+    "comments_posted": 0,
+    "favorites_made": 0,
+    "follows_added": 0,
+    "searches_performed": 0,
+    "errors_encountered": 9,
+    "total_interactions": 3
+  },
+  "daily_stats": [
+    {
+      "date": "2025-11-15",
+      "sessions_completed": 659,
+      "videos_watched": 44,
+      "likes_given": 3,
+      "comments_posted": 0,
+      "favorites_made": 0,
+      "follows_added": 0,
+      "searches_performed": 0,
+      "errors_encountered": 9,
+      "runtime_minutes": 113,
+      "created_at": "2025-11-15 10:04:23",
+      "updated_at": "2025-11-15 10:04:23"
+    }
+  ]
+}
