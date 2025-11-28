@@ -4,6 +4,8 @@
 """
 
 import os
+import sys
+import atexit
 import logging
 from datetime import datetime
 from typing import Optional
@@ -15,6 +17,18 @@ try:
 except ImportError:
     HAS_COLORLOG = False
     print("⚠️ colorlog未安装，将使用标准日志格式")
+
+
+class FlushingFileHandler(logging.FileHandler):
+    """每次写入后立即刷新的文件处理器，覆盖模式"""
+    
+    def __init__(self, filename, mode='w', encoding='utf-8'):
+        """mode='w' 覆盖旧文件"""
+        super().__init__(filename, mode=mode, encoding=encoding)
+    
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
 
 
 class RobustLogger:
@@ -70,14 +84,16 @@ class RobustLogger:
         self._add_error_handler()
         
         self._initialized = True
+        
+        # 注册退出钩子，确保日志刷新
+        atexit.register(self.flush_all)
+        
         self.logger.info(f"日志系统初始化完成: {name}")
     
     def _add_file_handler(self, max_bytes: int, backup_count: int):
-        """添加滚动文件处理器"""
-        log_file = os.path.join(
-            self.log_dir, 
-            f"{self.name}_{datetime.now().strftime('%Y%m%d')}.log"
-        )
+        """添加文件处理器（覆盖模式，固定文件名）"""
+        # 固定文件名，每次运行覆盖旧文件
+        log_file = os.path.join(self.log_dir, f"{self.name}.log")
         
         file_formatter = logging.Formatter(
             '%(asctime)s - %(name)s - [%(levelname)s] - '
@@ -85,12 +101,8 @@ class RobustLogger:
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding='utf-8'
-        )
+        # 使用覆盖模式 (mode='w')
+        file_handler = FlushingFileHandler(log_file, mode='w')
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(file_formatter)
         self.logger.addHandler(file_handler)
@@ -174,6 +186,18 @@ class RobustLogger:
         for handler in self.logger.handlers:
             if isinstance(handler, logging.StreamHandler) and not isinstance(handler, RotatingFileHandler):
                 handler.setLevel(level)
+    
+    def flush_all(self):
+        """强制刷新所有日志处理器"""
+        for handler in self.logger.handlers:
+            try:
+                handler.flush()
+            except Exception:
+                pass
+    
+    def flush(self):
+        """刷新日志（每次重要操作后调用）"""
+        self.flush_all()
 
 
 # 全局日志实例
@@ -244,4 +268,23 @@ def critical(msg: str, *args, **kwargs):
 def exception(msg: str, *args, **kwargs):
     """模块级异常日志"""
     get_logger().exception(msg, *args, **kwargs)
+
+
+def set_log_level(level_name: str):
+    """
+    动态设置日志级别
+    
+    Args:
+        level_name: 日志级别名称 ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
+    """
+    level_map = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARNING': logging.WARNING,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL
+    }
+    level = level_map.get(level_name.upper(), logging.INFO)
+    get_logger().set_level(level)
+    print(f"📋 日志级别已设置为: {level_name.upper()}")
 

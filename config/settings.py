@@ -12,14 +12,50 @@ from typing import Dict, Any, List
 import threading
 
 class HotReloadConfig:
-    """支持热更新的配置管理器"""
+    """支持热更新的配置管理器（含后台监听）"""
 
     def __init__(self, config_file: str = None):
         self.config_file = config_file or os.path.join(os.path.dirname(__file__), 'runtime_config.json')
         self._config = {}
         self._lock = threading.Lock()
         self._last_modified = 0
+        self._watch_thread = None
+        self._watching = False
+        self._callbacks = []  # 配置变化回调函数列表
         self.load_config()
+    
+    def start_watching(self, interval: float = 5.0):
+        """启动后台配置监听线程"""
+        if self._watching:
+            return
+        self._watching = True
+        self._watch_thread = threading.Thread(target=self._watch_loop, args=(interval,), daemon=True)
+        self._watch_thread.start()
+        print(f"📡 配置监听已启动（间隔 {interval}s）")
+    
+    def stop_watching(self):
+        """停止后台配置监听"""
+        self._watching = False
+        if self._watch_thread:
+            self._watch_thread.join(timeout=2)
+            self._watch_thread = None
+        print("⏹️ 配置监听已停止")
+    
+    def _watch_loop(self, interval: float):
+        """配置监听循环"""
+        while self._watching:
+            if self.auto_reload():
+                for callback in self._callbacks:
+                    try:
+                        callback(self._config)
+                    except Exception as e:
+                        print(f"配置回调执行失败: {e}")
+            time.sleep(interval)
+    
+    def add_callback(self, callback):
+        """添加配置变化回调函数"""
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
 
     def load_config(self):
         """加载配置文件"""
@@ -133,6 +169,20 @@ class HotReloadConfig:
                 "network_timeout": 30,
                 "element_wait_timeout": 10,
                 "app_restart_threshold": 5
+            },
+            "logging": {
+                "level": "INFO",  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+                "console_level": "INFO",
+                "file_level": "DEBUG"
+            },
+            "llm": {
+                "provider": "dashscope",
+                "api_key": "",
+                "model": "qwen-turbo",
+                "max_reply_length": 12,
+                "system_prompt": "你是一个抖音评论区的热心用户，需要回复其他用户的评论。\n\n回复要求：\n1. 字数严格控制在12字以内\n2. 语气亲切自然，像朋友聊天\n3. 巧妙引导对方看你的主页/头像，但不要太直接\n4. 不要用“私信”这类词，容易被限流\n5. 可以用：看我主页/我头像有/我那边有/我用过xx挺好 等表达",
+                "user_prompt_template": "用户评论：\"{comment}\"\n\n请用不超过12个字回复这条评论，引导对方查看你的主页。直接输出回复内容，不要任何解释。",
+                "fallback_replies": ["看我主页有分享~", "我那有同款哦", "头像找我聊~", "主页有详细的"]
             }
         }
 
@@ -170,6 +220,32 @@ ANTI_DETECTION_CONFIG = config.get('anti_detection', {})
 
 # 恢复配置
 RECOVERY_CONFIG = config.get('recovery', {})
+
+# 日志配置
+LOG_LEVEL = config.get('logging.level', 'INFO')
+LOG_CONSOLE_LEVEL = config.get('logging.console_level', 'INFO')
+LOG_FILE_LEVEL = config.get('logging.file_level', 'DEBUG')
+
+# LLM配置
+LLM_PROVIDER = config.get('llm.provider', 'dashscope')
+LLM_API_KEY = config.get('llm.api_key', '')
+LLM_MODEL = config.get('llm.model', 'qwen-turbo')
+LLM_MAX_REPLY_LENGTH = config.get('llm.max_reply_length', 12)
+LLM_SYSTEM_PROMPT = config.get('llm.system_prompt', '')
+LLM_USER_PROMPT_TEMPLATE = config.get('llm.user_prompt_template', '用户评论："{comment}"\n请用不超过12个字回复。')
+LLM_FALLBACK_REPLIES = config.get('llm.fallback_replies', ['看我主页有分享~', '我那有同款哦'])
+
+def _on_config_changed(new_config: Dict[str, Any]):
+    """配置变化回调 - 动态更新日志级别等"""
+    try:
+        from src.logger import set_log_level
+        new_level = new_config.get('logging', {}).get('level', 'INFO')
+        set_log_level(new_level)
+    except Exception as e:
+        print(f"配置回调执行失败: {e}")
+
+# 注册配置变化回调
+config.add_callback(_on_config_changed)
 
 def is_active_hour() -> bool:
     """检查当前是否为活跃时间"""

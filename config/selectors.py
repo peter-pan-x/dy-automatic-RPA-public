@@ -16,10 +16,23 @@ class SelectorVersion:
 
 
 class ElementSelectors:
-    """元素选择器配置类"""
+    """元素选择器配置类
+    
+    选择器优先级说明：
+    - UIAutomator (ANDROID_UIAUTOMATOR): 最快，原生Android定位
+    - ID: 较快，但可能随版本变化
+    - XPATH: 最慢，但最灵活
+    """
     
     # 点赞按钮选择器（优先级从高到低）
     LIKE_BUTTON = [
+        {
+            "by": By.ANDROID_UIAUTOMATOR,
+            "value": 'new UiSelector().descriptionContains("赞")',
+            "version": SelectorVersion.ALL,
+            "priority": 0,
+            "description": "UIAutomator定位点赞（最快）"
+        },
         {
             "by": By.XPATH,
             "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '赞')]",
@@ -67,6 +80,13 @@ class ElementSelectors:
     # 评论按钮选择器
     COMMENT_BUTTON = [
         {
+            "by": By.ANDROID_UIAUTOMATOR,
+            "value": 'new UiSelector().descriptionContains("评论")',
+            "version": SelectorVersion.ALL,
+            "priority": 0,
+            "description": "UIAutomator定位评论（最快）"
+        },
+        {
             "by": By.XPATH,
             "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '评论')]",
             "version": SelectorVersion.ALL,
@@ -105,6 +125,13 @@ class ElementSelectors:
     
     # 评论输入框选择器
     COMMENT_INPUT = [
+        {
+            "by": By.ANDROID_UIAUTOMATOR,
+            "value": 'new UiSelector().className("android.widget.EditText")',
+            "version": SelectorVersion.ALL,
+            "priority": 0,
+            "description": "UIAutomator定位输入框（最快）"
+        },
         {
             "by": By.XPATH,
             "value": "//android.widget.EditText[contains(@text, '友善') or contains(@text, '精彩') or contains(@text, '评论')]",
@@ -145,6 +172,13 @@ class ElementSelectors:
     # 评论发送按钮
     COMMENT_SEND_BUTTON = [
         {
+            "by": By.ANDROID_UIAUTOMATOR,
+            "value": 'new UiSelector().text("发送")',
+            "version": SelectorVersion.ALL,
+            "priority": 0,
+            "description": "UIAutomator定位发送按钮（最快）"
+        },
+        {
             "by": By.ID,
             "value": "com.ss.android.ugc.aweme:id/aot",
             "version": SelectorVersion.V28_PLUS,
@@ -169,6 +203,13 @@ class ElementSelectors:
     
     # 收藏按钮选择器
     FAVORITE_BUTTON = [
+        {
+            "by": By.ANDROID_UIAUTOMATOR,
+            "value": 'new UiSelector().descriptionContains("收藏")',
+            "version": SelectorVersion.ALL,
+            "priority": 0,
+            "description": "UIAutomator定位收藏（最快）"
+        },
         {
             "by": By.XPATH,
             "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '收藏')]",
@@ -209,6 +250,13 @@ class ElementSelectors:
     # 关注按钮选择器
     FOLLOW_BUTTON = [
         {
+            "by": By.ANDROID_UIAUTOMATOR,
+            "value": 'new UiSelector().descriptionContains("关注")',
+            "version": SelectorVersion.ALL,
+            "priority": 0,
+            "description": "UIAutomator定位关注（最快）"
+        },
+        {
             "by": By.XPATH,
             "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '关注')]",
             "version": SelectorVersion.ALL,
@@ -247,6 +295,13 @@ class ElementSelectors:
     
     # 搜索框选择器
     SEARCH_ENTRY = [
+        {
+            "by": By.ANDROID_UIAUTOMATOR,
+            "value": 'new UiSelector().description("搜索")',
+            "version": SelectorVersion.ALL,
+            "priority": 0,
+            "description": "UIAutomator定位搜索（最快）"
+        },
         {
             "by": By.XPATH,
             "value": "//android.widget.Button[@content-desc='搜索']",

@@ -10,6 +10,7 @@ from appium import webdriver
 from appium.webdriver.common.appiumby import AppiumBy as By
 from . import core_utils
 import config.settings as settings
+from config.selectors import ElementSelectors
 
 class DouyinInteractions:
     """抖音交互操作类"""
@@ -66,15 +67,8 @@ class DouyinInteractions:
         点赞当前视频
         """
         try:
-            # 点赞按钮定位方式（使用更新后的选择器，优先XPath方式）
-            like_selectors = [
-                {"by": By.XPATH, "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '赞')]"},
-                {"by": By.XPATH, "value": "//android.widget.LinearLayout[@content-desc and contains(@content-desc, '赞')]"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/f_u"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/hq+"},  # 新版本ID
-                {"by": By.XPATH, "value": "//android.widget.LinearLayout[contains(@content-desc, '喜欢')]"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/a3o"},
-            ]
+            # 使用统一的选择器配置（已包含 UIAutomator 高效定位）
+            like_selectors = ElementSelectors.LIKE_BUTTON
 
             print(f"❤️ 查找点赞按钮（共{len(like_selectors)}个选择器）")
             for i, selector in enumerate(like_selectors, 1):
@@ -119,12 +113,7 @@ class DouyinInteractions:
         try:
             # === 第1步：点击评论按钮，进入评论列表页面 ===
             print("💬 [1/6] 查找并点击评论按钮...")
-            comment_selectors = [
-                {"by": By.XPATH, "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '评论')]"},
-                {"by": By.XPATH, "value": "//android.widget.LinearLayout[@content-desc and contains(@content-desc, '评论')]"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/eiz"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/a3p"},
-            ]
+            comment_selectors = ElementSelectors.COMMENT_BUTTON
 
             comment_clicked = False
             for i, selector in enumerate(comment_selectors, 1):
@@ -144,11 +133,7 @@ class DouyinInteractions:
 
             # === 第2步：查找并点击输入框激活 ===
             print("💬 [2/6] 查找并点击输入框...")
-            input_selectors = [
-                {"by": By.XPATH, "value": "//android.widget.EditText"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/ebm"},
-                {"by": By.XPATH, "value": "//android.widget.EditText[contains(@text, '友善')]"},
-            ]
+            input_selectors = ElementSelectors.COMMENT_INPUT
 
             input_element = None
             for i, selector in enumerate(input_selectors, 1):
@@ -201,12 +186,7 @@ class DouyinInteractions:
 
             # === 第5步：查找并点击发送按钮 ===
             print("💬 [5/6] 查找并点击发送按钮...")
-            send_selectors = [
-                {"by": By.XPATH, "value": "//android.widget.TextView[@text='发送']"},
-                {"by": By.XPATH, "value": "//android.widget.Button[@text='发送']"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/aot"},
-                {"by": By.XPATH, "value": "//*[@text='发送']"},
-            ]
+            send_selectors = ElementSelectors.COMMENT_SEND_BUTTON
 
             send_clicked = False
             for i, selector in enumerate(send_selectors, 1):
@@ -269,13 +249,8 @@ class DouyinInteractions:
         收藏当前视频
         """
         try:
-            favorite_selectors = [
-                {"by": By.XPATH, "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '收藏')]"},
-                {"by": By.XPATH, "value": "//android.widget.LinearLayout[@content-desc and contains(@content-desc, '收藏')]"},
-                {"by": By.XPATH, "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '星')]"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/d-5"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/a3q"},
-            ]
+            # 使用统一的选择器配置
+            favorite_selectors = ElementSelectors.FAVORITE_BUTTON
 
             print(f"⭐ 查找收藏按钮（共{len(favorite_selectors)}个选择器）")
             for i, selector in enumerate(favorite_selectors, 1):
@@ -316,14 +291,8 @@ class DouyinInteractions:
         关注当前视频作者
         """
         try:
-            follow_selectors = [
-                {"by": By.XPATH, "value": "//android.widget.ImageView[@content-desc and contains(@content-desc, '关注')]"},
-                {"by": By.XPATH, "value": "//android.widget.TextView[@text='关注']"},
-                {"by": By.XPATH, "value": "//android.widget.Button[@content-desc='关注']"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/jjd"},
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/title_text"},
-                {"by": By.XPATH, "value": "//android.widget.Button[@text='关注']"},
-            ]
+            # 使用统一的选择器配置
+            follow_selectors = ElementSelectors.FOLLOW_BUTTON
 
             print(f"👥 查找关注按钮（共{len(follow_selectors)}个选择器）")
             for i, selector in enumerate(follow_selectors, 1):
@@ -368,11 +337,7 @@ class DouyinInteractions:
             print(f"🔍 开始搜索: {keyword}")
 
             # 点击搜索框
-            search_selectors = [
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/a1o"},  # 搜索框
-                {"by": By.XPATH, "value": "//android.widget.ImageView[@content-desc='搜索']"},
-                {"by": By.XPATH, "value": "//android.widget.TextView[@text='搜索']"},
-            ]
+            search_selectors = ElementSelectors.SEARCH_ENTRY
 
             for selector in search_selectors:
                 if core_utils.wait_and_click(selector["by"], selector["value"]):
@@ -384,11 +349,7 @@ class DouyinInteractions:
                 return False
 
             # 输入搜索关键词
-            input_selectors = [
-                {"by": By.ID, "value": "com.ss.android.ugc.aweme:id/et_search_kw"},  # 搜索输入框
-                {"by": By.XPATH, "value": "//android.widget.EditText"},
-                {"by": By.XPATH, "value": "//android.widget.TextView[@text='搜你想看的']"},
-            ]
+            input_selectors = ElementSelectors.SEARCH_INPUT
 
             input_element = None
             for selector in input_selectors:

@@ -11,7 +11,7 @@ from typing import List, Optional, Dict, Any
 from enum import Enum
 
 from appium import webdriver
-from . import interactions, tracker
+from . import interactions, tracker, core_utils
 from .app_driver import get_driver_manager
 import config.settings as settings
 
@@ -185,7 +185,6 @@ class TaskManager:
                     # 等待一下
                     time.sleep(random.uniform(0.5, 1.0))
                     # 滑动到下一个视频
-                    from . import core_utils
                     core_utils.swipe_up_humanized()
                     time.sleep(random.uniform(settings.ACTION_DELAY_MIN, settings.ACTION_DELAY_MAX))
                     continue
@@ -194,7 +193,6 @@ class TaskManager:
                 if interactions.is_advertisement():
                     print("📺 当前为广告视频，跳过...")
                     # 滑动到下一个视频
-                    from . import core_utils
                     core_utils.swipe_up_humanized()
                     time.sleep(random.uniform(settings.ACTION_DELAY_MIN, settings.ACTION_DELAY_MAX))
                     continue
@@ -203,7 +201,6 @@ class TaskManager:
                 if not interactions.has_interaction_buttons():
                     print("⚠️ 未检测到交互按钮，可能是特殊视频，跳过...")
                     # 滑动到下一个视频
-                    from . import core_utils
                     core_utils.swipe_up_humanized()
                     time.sleep(random.uniform(settings.ACTION_DELAY_MIN, settings.ACTION_DELAY_MAX))
                     continue
@@ -266,7 +263,6 @@ class TaskManager:
                         self.current_session_interactions += 1
 
                 # 滑动到下一个视频
-                from . import core_utils
                 if not core_utils.swipe_up_humanized():
                     print("⚠️ 滑动失败，尝试恢复")
                     self.consecutive_errors += 1
@@ -338,7 +334,6 @@ class TaskManager:
                     # 等待一下
                     time.sleep(random.uniform(0.5, 1.0))
                     # 滑动到下一个视频
-                    from . import core_utils
                     core_utils.swipe_up_humanized()
                     time.sleep(random.uniform(settings.ACTION_DELAY_MIN, settings.ACTION_DELAY_MAX))
                     continue
@@ -347,7 +342,6 @@ class TaskManager:
                 if interactions.is_advertisement():
                     print("📺 当前为广告视频，跳过...")
                     # 滑动到下一个视频
-                    from . import core_utils
                     core_utils.swipe_up_humanized()
                     time.sleep(random.uniform(settings.ACTION_DELAY_MIN, settings.ACTION_DELAY_MAX))
                     continue
@@ -356,7 +350,6 @@ class TaskManager:
                 if not interactions.has_interaction_buttons():
                     print("⚠️ 未检测到交互按钮，可能是特殊视频，跳过...")
                     # 滑动到下一个视频
-                    from . import core_utils
                     core_utils.swipe_up_humanized()
                     time.sleep(random.uniform(settings.ACTION_DELAY_MIN, settings.ACTION_DELAY_MAX))
                     continue
@@ -399,7 +392,6 @@ class TaskManager:
                         self.current_session_interactions += 1
 
                 # 滑动到下一个视频
-                from . import core_utils
                 if not core_utils.swipe_up_humanized():
                     print("⚠️ 滑动失败")
                     self.consecutive_errors += 1
@@ -479,7 +471,6 @@ class TaskManager:
                     return
 
             # 重新初始化交互模块
-            from . import core_utils
             interactions.init_interactions(self.driver)
             core_utils.init_utils(self.driver)
 
@@ -499,7 +490,6 @@ class TaskManager:
         self.running = True
 
         # 初始化模块
-        from . import core_utils
         interactions.init_interactions(self.driver)
         core_utils.init_utils(self.driver)
 
