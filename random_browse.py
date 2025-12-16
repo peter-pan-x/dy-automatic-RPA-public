@@ -73,28 +73,29 @@ class RandomBrowseSession:
         logger.info("🎯 Random Browse Session 初始化完成")
         logger.info(f"⏱️  运行时长: {runtime_seconds}秒")
         logger.info(f"💬 评论库: {len(self.comments)}条")
-        logger.info(f"🎲 跳过概率: {int(self.prob_config['skip_video']*100)}%, 收藏概率: {int(self.prob_config['favorite']*100)}%")
+        logger.info(f"🎲 概率配置: 跳过{int(self.prob_config['skip_video']*100)}% 点赞{int(self.prob_config['like']*100)}% 评论{int(self.prob_config['comment']*100)}% 收藏{int(self.prob_config['favorite']*100)}%")
         logger.info("=" * 60)
     
     def _load_comments(self) -> List[str]:
-        """加载评论库"""
-        comments_file = os.path.join(os.path.dirname(__file__), 'config', 'comments.txt')
+        """从config.yaml加载评论库"""
+        import yaml
+        config_path = os.path.join(os.path.dirname(__file__), 'config', 'config.yaml')
         try:
-            with open(comments_file, 'r', encoding='utf-8') as f:
-                comments = [line.strip() for line in f if line.strip()]
-                if comments:
-                    return comments
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = yaml.safe_load(f) or {}
+            comments = cfg.get('random_browse', {}).get('comments', [])
+            if comments:
+                return comments
         except Exception as e:
             logger.warning(f"⚠️ 加载评论库失败: {e}")
         
         # 默认评论
-        return ["太棒了！", "学到了", "真不错", "👍", "收藏了"]
+        return ["666", "学到了", "真不错", "👍", "收藏了"]
     
     def _load_probability_config(self) -> dict:
         """加载互动概率配置"""
         import yaml
         config_path = os.path.join(os.path.dirname(__file__), 'config', 'config.yaml')
-        default = {'skip_video': 22, 'favorite': 33}
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 cfg = yaml.safe_load(f) or {}
@@ -103,12 +104,13 @@ class RandomBrowseSession:
             prob_cfg = rb_cfg.get('probability', {})
             return {
                 'skip_video': prob_cfg.get('skip_video', 22) / 100,
+                'like': prob_cfg.get('like', 66) / 100,
                 'comment': prob_cfg.get('comment', 66) / 100,
                 'favorite': prob_cfg.get('favorite', 33) / 100,
             }
         except Exception as e:
             logger.warning(f"⚠️ 概率配置读取失败，使用默认值: {e}")
-            return {'skip_video': 0.22, 'comment': 0.66, 'favorite': 0.33}
+            return {'skip_video': 0.22, 'like': 0.66, 'comment': 0.66, 'favorite': 0.33}
     
     def check_environment(self) -> bool:
         """
@@ -222,91 +224,37 @@ class RandomBrowseSession:
     
     def ensure_in_recommendation_tab_and_click_video(self) -> bool:
         """
-        确保在"推荐"tab下并点击进入视频
-
-        Returns:
-            bool: 是否成功进入视频全屏模式
+        确保在"推荐"tab下并进入常规视频模式
+        
+        逻辑简化：
+        1. 切换到推荐tab
+        2. 默认已在全屏模式，循环检测当前视频是否为常规视频（有交互按钮）
+        3. 如果不是（直播/广告/无按钮），滑动到下一个
+        4. 直到找到常规视频或超时
         """
-        logger.info("\n🔍 确保在【推荐】tab并进入视频...")
+        logger.info("\n🔍 确保在常规视频模式...")
         try:
-            # 1. 先切换到推荐tab（优化版本）
-            logger.info("步骤1: 快速切换到推荐tab")
-            success = interactions.go_to_for_you_page()
-            if not success:
-                logger.warning("⚠️ 无法确认推荐页面位置")
-            else:
-                logger.info("✅ 已切换到【推荐】列表")
-
-            # 优化：智能等待，用动态检测代替固定等待
-            for quick_wait in range(3):  # 最多等待0.9秒
-                time.sleep(0.3)
-                # 快速检测页面是否稳定
-                current_state = self._detect_page_state()
-                if current_state in ["fullscreen_video", "video_list", "four_grid"]:
-                    logger.info(f"✅ 页面已稳定 (等待了{quick_wait+1}*0.3秒)")
-                    break
-            else:
-                logger.info("   页面稳定超时，继续执行")
-
-            # 2. 检测当前页面状态并尝试进入视频
-            max_attempts = 5
+            # APP打开默认在推荐tab，无需切换，直接查找常规视频
+            max_attempts = 10
+            logger.info(f"查找常规视频 (最多尝试{max_attempts}次)")
+            
             for attempt in range(max_attempts):
-                logger.info(f"\n🎯 视频进入尝试 {attempt + 1}/{max_attempts}")
-
-                # 检测当前页面状态
-                current_state = self._detect_page_state()
-                logger.info(f"当前页面状态: {current_state}")
-
-                if current_state == "fullscreen_video":
-                    logger.info("✅ 已在全屏视频模式")
-
-                    # 强制确认：验证交互按钮是否存在
-                    interaction_data = self.get_video_interaction_data()
-                    if interaction_data.get('has_like_button', False) and interaction_data.get('has_comment_button', False):
-                        logger.info("✅ 确认检测到交互按钮，视频模式正常")
-                        return True
-                    else:
-                        logger.warning("⚠️ 虽然检测到全屏模式，但未找到交互按钮，继续尝试")
-                        # 尝试返回并重新尝试
-                        time.sleep(1.0)
-                        continue
-
-                elif current_state == "four_grid":
-                    logger.info("🎯 检测到四宫格界面！启动特殊处理模式")
-                    if self._handle_four_grid_interface():
-                        logger.info("✅ 成功处理四宫格界面，进入视频模式")
-                        return True
-                    else:
-                        logger.warning(f"⚠️ 四宫格处理失败，尝试 {attempt + 1}/{max_attempts}")
-                        time.sleep(1.0)
-                        continue
-
-                elif current_state == "video_list":
-                    logger.info("🎬 在视频列表页面，尝试点击进入视频")
-                    if self._click_random_video_from_list_with_verification():
-                        logger.info("✅ 成功点击视频并进入全屏模式")
-                        return True
-                    else:
-                        logger.warning(f"⚠️ 点击视频失败，尝试 {attempt + 1}/{max_attempts}")
-                        time.sleep(1.0)
-                        continue
-
-                elif current_state == "unknown":
-                    logger.warning("⚠️ 页面状态未知，尝试点击视频")
-                    if self._click_random_video_from_list_with_verification():
-                        return True
-                    else:
-                        logger.warning(f"⚠️ 点击视频失败，尝试 {attempt + 1}/{max_attempts}")
-                        time.sleep(1.0)
-                        continue
-
+                logger.info(f"\n🎯 视频检查尝试 {attempt + 1}/{max_attempts}")
+                
+                # 获取交互数据检测按钮
+                interaction_data = self.get_video_interaction_data()
+                has_like = interaction_data.get('has_like_button', False)
+                has_comment = interaction_data.get('has_comment_button', False)
+                
+                if has_like and has_comment:
+                    logger.info("✅ 确认检测到常规视频（有点赞/评论按钮）")
+                    return True
                 else:
-                    # 如果不是预期的状态，尝试滑动到视频列表
-                    logger.info("🔄 页面状态异常，尝试滑动到视频列表")
-                    self._swipe_to_video_list()
-                    time.sleep(2.0)
-
-            logger.error(f"❌ 经过 {max_attempts} 次尝试仍无法进入视频模式")
+                    logger.warning("⚠️ 当前不是常规视频（无交互按钮/直播/广告），切换下一个...")
+                    core_utils.swipe_up_humanized()
+                    time.sleep(random.uniform(1.5, 2.5))
+            
+            logger.error(f"❌ 经过 {max_attempts} 次尝试仍未找到常规视频")
             return False
 
         except Exception as e:
@@ -1734,8 +1682,8 @@ class RandomBrowseSession:
             # 等待评论区打开
             time.sleep(2.5)
             
-            # 2. 随机滑动 3-6 次
-            scroll_times = random.randint(3, 6)
+            # 2. 随机滑动 2-5 次
+            scroll_times = random.randint(2, 5)
             logger.info(f"📜 步骤2: 评论区滑动 {scroll_times} 次")
             
             for i in range(scroll_times):
@@ -1868,10 +1816,10 @@ class RandomBrowseSession:
             if interaction_data:
                 logger.info(f"📊 目标视频互动状态: 点赞{interaction_data['like_text']} 评论{interaction_data['comment_text']}")
 
-            # 1. 等待视频播放（30-80%，假设视频100秒）
-            play_percentage = random.uniform(30, 80)  # 30-80%
-            play_time = play_percentage  # 假设视频100秒，播放时间=百分比秒
-            logger.info(f"\n⏱️ 等待视频播放 {play_percentage:.1f}% ({play_time:.1f}秒)...")
+            # 1. 等待视频播放（随机7-30秒，反自动化）
+            # 不再使用百分比假设，而是直接使用安全的随机时间范围
+            play_time = random.uniform(7, 30)
+            logger.info(f"\n⏱️ 随机播放等待: {play_time:.1f}秒 (范围:7-30s)...")
             time.sleep(play_time)
 
             # 2. 进入评论区，逐条阅读所有评论
@@ -1890,8 +1838,13 @@ class RandomBrowseSession:
                     'content': comment_text
                 })
                 logger.info("✅ 评论成功")
+                # 评论成功后，perform_comment_with_scroll 内部已经关闭了评论区
             else:
                 logger.warning("⚠️ 评论失败")
+                # 关键修复：评论失败时，必须手动关闭评论区
+                logger.info("   尝试关闭评论区...")
+                self.driver.press_keycode(4)  # Back键
+                time.sleep(1.0)
 
             time.sleep(random.uniform(1.0, 2.0))
 
@@ -1949,6 +1902,15 @@ class RandomBrowseSession:
         """
         执行浏览循环（独立方法，可被外部调用）
         
+        流程（简洁版）：
+        1. 检查是否常规视频（有点赞/评论按钮）→ 不是就滑动到下一个
+        2. 按概率触发"不感兴趣"跳过
+        3. 随机播放7-30秒
+        4. 按概率点赞
+        5. 按概率评论（打开→滑动2-5次→写评论→提交→关闭）
+        6. 按概率收藏
+        7. 滑动到下一个
+        
         Args:
             runtime_seconds: 运行时间（秒），如果为None则使用self.runtime_seconds
         """
@@ -1957,9 +1919,12 @@ class RandomBrowseSession:
         
         logger.info("\n" + "=" * 60)
         logger.info("🎬 开始随机浏览循环")
+        logger.info(f"⏱️  运行时长: {runtime_seconds}秒")
         logger.info("=" * 60)
         
         self.start_time = time.time()
+        
+        consecutive_failures = 0  # 连续操作失败计数
         
         while True:
             # 检查时间限制
@@ -1968,56 +1933,187 @@ class RandomBrowseSession:
             
             if elapsed >= runtime_seconds:
                 logger.info(f"\n⏰ 已达到运行时间限制 ({runtime_seconds}秒)")
-                logger.info("准备结束...")
                 break
             
             self.stats['videos_browsed'] += 1
             video_num = self.stats['videos_browsed']
             
-            logger.info("\n" + "=" * 60)
-            logger.info(f"📺 视频 #{video_num} | 剩余时间: {remaining}秒")
-            logger.info("=" * 60)
+            logger.info(f"\n{'='*50}")
+            logger.info(f"📺 视频 #{video_num} | 剩余: {remaining}秒")
+            logger.info("=" * 50)
             
             # 等待视频加载
-            time.sleep(2.0)
-            
-            # 获取视频互动数据
+            time.sleep(1.5)
+
+            # 先检测是否为直播入口视频（直播没有常规交互按钮，需直接划过）
+            if self._is_live_entrance_video():
+                logger.info("🔴 检测到直播入口视频，直接划过")
+                self.stats['videos_skipped'] += 1
+                self.swipe_to_next_video()
+                continue
+
+            # ========== 核心判断：是否为常规视频（使用原有方法）==========
             interaction_data = self.get_video_interaction_data()
-
-            # 判断视频是否值得浏览
-            if not self.is_video_worthy_browsing(interaction_data):
-                logger.info("⏭️ 跳过低质量视频")
-                self.swipe_to_next_video()
-                continue
-
-            # 22% 概率跳过
-            if self.skip_with_probability():
-                self.swipe_to_next_video()
-                continue
-
-            # 检测视频类型
-            video_type = self.detect_video_type()
-
-            if video_type == "live":
-                logger.info("⏭️ 跳过直播视频")
-                self.swipe_to_next_video()
-                continue
-
-            if video_type == "unknown":
-                logger.info("⏭️ 跳过未知类型视频")
-                self.swipe_to_next_video()
-                continue
-
-            # 执行目标视频交互流程（仅针对评论数>=5的常规视频）
-            self.perform_target_video_interactions(interaction_data)
+            has_like = interaction_data.get('has_like_button', False)
+            has_comment = interaction_data.get('has_comment_button', False)
             
-            # 滑动到下一个视频
+            # 只要缺少任一按钮，直接划过
+            if not (has_like and has_comment):
+                logger.info("⏭️ 非常规视频（无交互按钮），跳过")
+                self.stats['videos_skipped'] += 1
+                consecutive_failures += 1
+                
+                # 连续3次失败，可能界面异常，等待后重试
+                if consecutive_failures >= 3:
+                    logger.warning(f"⚠️ 连续{consecutive_failures}次未找到按钮，等待2秒后继续...")
+                    time.sleep(2.0)
+                    consecutive_failures = 0
+                
+                self.swipe_to_next_video()
+                continue
+            
+            # 找到常规视频，重置失败计数
+            consecutive_failures = 0
+            logger.info(f"✅ 常规视频 | 点赞:{interaction_data.get('like_text', '?')} 评论:{interaction_data.get('comment_text', '?')}")
+            
+            # ========== 按概率触发"不感兴趣"跳过 ==========
+            skip_prob = self.prob_config.get('skip_video', 0.22)
+            if random.random() < skip_prob:
+                logger.info(f"🎲 命中跳过概率 ({int(skip_prob*100)}%)，模拟不感兴趣")
+                self.stats['videos_skipped'] += 1
+                self.swipe_to_next_video()
+                continue
+            
+            # ========== 随机播放5-15秒（每5秒检测播放状态）==========
+            play_time = random.uniform(5, 15)
+            logger.info(f"⏱️  播放视频 {play_time:.1f}秒...")
+            
+            # 分段等待，每5秒检测一次播放状态
+            elapsed_play = 0
+            while elapsed_play < play_time:
+                wait_chunk = min(5.0, play_time - elapsed_play)
+                time.sleep(wait_chunk)
+                elapsed_play += wait_chunk
+                
+                # 检测视频是否暂停（通过查找播放按钮或暂停图标）
+                if elapsed_play < play_time:  # 最后一次不检测
+                    try:
+                        # 检测是否有暂停状态的指示（播放按钮出现说明视频暂停了）
+                        pause_indicators = [
+                            'new UiSelector().descriptionContains("播放")',
+                            'new UiSelector().descriptionContains("暂停")',
+                        ]
+                        is_paused = False
+                        for selector in pause_indicators:
+                            elem = core_utils.find_element_safe(
+                                By.ANDROID_UIAUTOMATOR, selector, timeout=0.5
+                            )
+                            if elem:
+                                is_paused = True
+                                break
+                        
+                        if is_paused:
+                            logger.info("   ⚠️ 检测到视频暂停，点击屏幕恢复播放")
+                            # 点击屏幕中心恢复播放
+                            window_size = self.driver.get_window_size()
+                            center_x = window_size['width'] // 2
+                            center_y = window_size['height'] // 2
+                            self.driver.tap([(center_x, center_y)])
+                            time.sleep(0.5)
+                    except:
+                        pass  # 检测失败不影响主流程
+            
+            # ========== 按概率点赞 ==========
+            like_prob = self.prob_config.get('like', 0.66)
+            if random.random() < like_prob:
+                logger.info(f"👍 尝试点赞 ({int(like_prob*100)}%)")
+                self.stats['like_attempts'] += 1
+                if interactions.like_current_video():
+                    self.stats['like_success'] += 1
+                    logger.info("   ✅ 点赞成功")
+                else:
+                    logger.info("   ⚠️ 点赞失败")
+                    consecutive_failures += 1
+                time.sleep(random.uniform(0.3, 0.8))
+            
+            # ========== 按概率评论 ==========
+            comment_prob = self.prob_config.get('comment', 0.66)
+            if random.random() < comment_prob:
+                logger.info(f"💬 尝试评论 ({int(comment_prob*100)}%)")
+                comment_text = random.choice(self.comments)
+                self.stats['comment_attempts'] += 1
+                
+                if self.perform_comment_with_scroll(comment_text):
+                    self.stats['comment_success'] += 1
+                    self.stats['comments_posted'].append({
+                        'time': datetime.now().strftime('%H:%M:%S'),
+                        'content': comment_text
+                    })
+                    logger.info("   ✅ 评论成功")
+                else:
+                    logger.info("   ⚠️ 评论失败")
+                    consecutive_failures += 1
+                    try:
+                        self.driver.press_keycode(4)
+                        time.sleep(0.5)
+                    except:
+                        pass
+                
+                time.sleep(random.uniform(0.3, 0.8))
+            
+            # ========== 按概率收藏 ==========
+            fav_prob = self.prob_config.get('favorite', 0.33)
+            if random.random() < fav_prob:
+                logger.info(f"⭐ 尝试收藏 ({int(fav_prob*100)}%)")
+                self.stats['favorite_attempts'] += 1
+                if interactions.favorite_current_video():
+                    self.stats['favorite_success'] += 1
+                    logger.info("   ✅ 收藏成功")
+                else:
+                    logger.info("   ⚠️ 收藏失败")
+                    consecutive_failures += 1
+                time.sleep(random.uniform(0.3, 0.8))
+            
+            # 连续3次操作失败，重新检查视频类型
+            if consecutive_failures >= 3:
+                logger.warning(f"⚠️ 连续{consecutive_failures}次操作失败，重新检查视频类型...")
+                consecutive_failures = 0
+                # 不滑动，在下一轮循环重新检测当前视频
+                continue
+            
+            # ========== 滑动到下一个视频 ==========
             self.swipe_to_next_video()
-            
-            # 定期检查位置（每5个视频）
-            if video_num % 5 == 0:
-                logger.info("\n🔍 定期位置检查...")
-                self.ensure_in_recommendation_tab_and_click_video()
+
+    def _is_live_entrance_video(self) -> bool:
+        """检测当前视频是否为直播入口/直播间视频"""
+        try:
+            keywords = ["进入直播间"]
+            from appium.webdriver.common.appiumby import AppiumBy as By
+
+            for kw in keywords:
+                elem = core_utils.find_element_safe(
+                    By.ANDROID_UIAUTOMATOR,
+                    f'new UiSelector().textContains("{kw}")',
+                    timeout=0.3
+                )
+                if elem:
+                    logger.info(f"   🔍 文本提示直播: {kw}")
+                    return True
+
+                elem = core_utils.find_element_safe(
+                    By.ANDROID_UIAUTOMATOR,
+                    f'new UiSelector().descriptionContains("{kw}")',
+                    timeout=0.3
+                )
+                if elem:
+                    logger.info(f"   🔍 描述提示直播: {kw}")
+                    return True
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"直播检测异常: {e}")
+            return False
     
     def run(self) -> bool:
         """

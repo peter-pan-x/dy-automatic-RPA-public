@@ -1,0 +1,24 @@
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:91 - __init__() - 日志系统初始化完成: random_browse
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ============================================================
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - 🎯 Random Browse Session 初始化完成
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ⏱️  运行时长: 180秒
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - 💬 评论库: 30条
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - 🎲 概率配置: 跳过22% 点赞66% 评论22% 收藏33%
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ============================================================
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - 
+============================================================
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - 🔍 开始环境检查...
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ============================================================
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - 📡 检查 Appium 服务...
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ✅ Appium 服务运行正常
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - 📱 检查 ADB 设备连接...
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ✅ 检测到 1 个设备
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() -    📱 ZNW9L23920B3072H
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ============================================================
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ✅ 环境检查通过
+2025-12-02 16:09:08 - random_browse - [INFO] - logger.py:165 - info() - ============================================================
+2025-12-02 16:09:12 - random_browse - [INFO] - logger.py:165 - info() - 
+🚀 强制启动抖音 APP...
+2025-12-02 16:09:12 - random_browse - [INFO] - logger.py:165 - info() -    尝试终止应用: com.ss.android.ugc.aweme
+2025-12-02 16:09:14 - random_browse - [INFO] - logger.py:165 - info() -    启动应用: com.ss.android.ugc.aweme
+2025-12-02 16:09:14 - random_browse - [INFO] - logger.py:165 - info() - ✅ 抖音启动成功

@@ -37,6 +37,9 @@ CONFIG_PATH = os.path.join(BASE_DIR, 'config', 'config.yaml')
 # 导入评论扫描模块（LLM智能回复）
 from test_comment_text import scan_comments_loop, REPLIED_COMMENTS, INTERCEPT_KEYWORDS
 
+# 导入视频任务数据库（去重）
+from src.video_db import is_video_scanned, record_scanned_video, get_scanned_count
+
 # 初始化日志
 logger = setup_logger("search_browse", log_dir="logs")
 
@@ -63,9 +66,14 @@ class SearchBrowseSession:
         # 加载视频过滤规则
         self.video_filter = self._load_video_filter()
         
+        # 加载当前产品名称（用于去重）
+        self.current_product = self._load_current_product()
+        self.current_keyword = ""  # 当前搜索关键词，在perform_search时设置
+        
         # 统计数据
         self.stats = {
             "videos_watched": 0,
+            "videos_skipped_duplicate": 0,  # 跳过的重复视频
             "comments_read": 0,
             "replies_sent": 0,
             "likes_given": 0,
@@ -74,9 +82,13 @@ class SearchBrowseSession:
         # 创建浏览会话实例（用于复用部分功能）
         self.browse_session = RandomBrowseSession()
         
+        # 获取当前产品已扫描的视频数量
+        scanned_count = get_scanned_count(self.current_product)
+        
         logger.info("=" * 60)
         logger.info("🔍 Search Browse Session 初始化完成 (LLM智能回复模式)")
         logger.info(f"🎯 本次目标回复: {self.target_replies_goal} 条 (范围 {self.target_comment_min}-{self.target_comment_max})")
+        logger.info(f"📦 当前产品: {self.current_product} (已扫描 {scanned_count} 个视频)")
         logger.info(f"📚 加载了 {len(self.keywords)} 个搜索关键词")
         logger.info(f"🎯 拦截关键词: {INTERCEPT_KEYWORDS}")
         logger.info("=" * 60)
@@ -131,6 +143,20 @@ class SearchBrowseSession:
             'min_comments': cfg['min_comments'],
         }
 
+    def _load_current_product(self) -> str:
+        """加载当前推广产品名称（用于去重标识）"""
+        try:
+            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                cfg = yaml.safe_load(f) or {}
+            promotion = cfg.get('promotion', {})
+            products = promotion.get('products', [])
+            if products and len(products) > 0:
+                return products[0].get('name', '未知产品')
+            return promotion.get('brand', '未知产品')
+        except Exception as e:
+            logger.warning(f"⚠️ 产品配置读取失败: {e}")
+            return "未知产品"
+
     def _load_keywords(self) -> List[str]:
         """
         从 hot_words 文件夹加载所有关键词
@@ -184,6 +210,9 @@ class SearchBrowseSession:
         Returns:
             bool: 搜索是否成功
         """
+        # 记录当前关键词（用于数据库记录）
+        self.current_keyword = keyword
+        
         try:
             logger.info(f"\n🔍 开始搜索关键词: {keyword}")
             
@@ -199,7 +228,7 @@ class SearchBrowseSession:
                 
                 # 右上角搜索图标位置（放大镜按钮）
                 x = int(width * 0.9)  # 右侧 90% 处
-                y = int(height * 0.05)  # 顶部 5% 处
+                y = int(height * 0.07)  # 顶部 7% 处（避开状态栏）
                 
                 logger.info(f"      屏幕尺寸: {width}x{height}")
                 logger.info(f"      点击坐标: ({x}, {y})")
@@ -323,69 +352,231 @@ class SearchBrowseSession:
     
     def switch_to_video_tab(self) -> bool:
         """
-        切换到视频 tab（优化速度版）
-        
+        切换到视频 tab（动态识别版）
+
         Returns:
             bool: 切换是否成功
         """
         try:
             logger.info("\n📹 切换到视频 tab...")
-            
-            # 设置较短的隐式等待时间
-            self.driver.implicitly_wait(1)
-            
-            tab_clicked = False
-            
-            # 1. 直接尝试最可靠的选择器（不遍历多个）
-            try:
-                element = self.driver.find_element(
-                    By.ANDROID_UIAUTOMATOR, 
-                    'new UiSelector().text("视频")'
-                )
-                if element:
-                    element.click()
-                    logger.info("   ✅ 已点击视频 tab")
-                    tab_clicked = True
-            except:
-                pass
-            
-            # 2. 备用：XPath
-            if not tab_clicked:
-                try:
-                    element = self.driver.find_element(By.XPATH, "//android.widget.TextView[@text='视频']")
-                    if element:
-                        element.click()
-                        logger.info("   ✅ 已点击视频 tab (XPath)")
-                        tab_clicked = True
-                except:
-                    pass
-            
-            # 3. 坐标点击（最后备用）
-            if not tab_clicked:
-                logger.info("   使用坐标点击...")
-                window_size = self.driver.get_window_size()
-                x = int(window_size['width'] * 0.58)
-                y = int(window_size['height'] * 0.15)
-                self.driver.tap([(x, y)])
-                logger.info(f"   ✅ 坐标点击 ({x}, {y})")
-                tab_clicked = True
-            
-            # 恢复默认等待时间
-            self.driver.implicitly_wait(10)
-            
-            # 等待Tab加载（减少等待时间）
-            time.sleep(1.5)
-            
-            # 验证是否真的切换成功（可选：检查是否还在商品页）
-            # 这里我们简单返回点击状态，但在主流程中会检查
-            if not tab_clicked:
-                logger.error("❌ 未能找到或点击视频 tab")
-                return False
-                
-            return True
-            
+
+            # 多种策略查找视频tab
+            strategies = [
+                self._switch_by_text,
+                self._switch_by_content_desc,
+                self._switch_by_tab_layout
+            ]
+
+            for i, strategy in enumerate(strategies):
+                logger.info(f"   🎯 策略 {i+1}: {strategy.__name__}")
+                if strategy():
+                    logger.info("   ✅ 视频tab切换成功")
+                    time.sleep(1.0)
+                    return True
+
+                # 策略失败后短暂等待，再尝试下一个
+                time.sleep(0.5)
+
+            # 所有策略都失败，尝试备用方案
+            logger.warning("   ⚠️ 尝试备用方案...")
+            return self._switch_fallback()
+
         except Exception as e:
             logger.error(f"❌ 切换视频 tab 失败: {e}")
+            return False
+
+    def _switch_by_text(self) -> bool:
+        """策略1: 通过文本'视频'查找并点击"""
+        try:
+            # 查找文本为"视频"的元素
+            selectors = [
+                (By.XPATH, "//android.widget.TextView[@text='视频']"),
+                (By.XPATH, "//android.widget.Button[@text='视频']"),
+                (By.XPATH, "//*[contains(@text,'视频')]"),
+                (By.ANDROID_UIAUTOMATOR, 'new UiSelector().text("视频")'),
+                (By.ANDROID_UIAUTOMATOR, 'new UiSelector().textContains("视频")')
+            ]
+
+            for by, val in selectors:
+                try:
+                    elements = self.driver.find_elements(by, val)
+                    for elem in elements:
+                        if elem.is_displayed() and elem.is_enabled():
+                            elem.click()
+                            logger.info(f"   🎯 找到并点击视频tab: {by}={val}")
+                            return True
+                except:
+                    continue
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"   策略1失败: {e}")
+            return False
+
+    def _switch_by_content_desc(self) -> bool:
+        """策略2: 通过content-desc查找视频tab"""
+        try:
+            # 查找content-desc包含'视频'的元素
+            selectors = [
+                (By.XPATH, "//*[contains(@content-desc,'视频')]"),
+                (By.XPATH, "//*[contains(@content-desc,'Video')]"),
+                (By.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("视频")'),
+                (By.ANDROID_UIAUTOMATOR, 'new UiSelector().descriptionContains("Video")')
+            ]
+
+            for by, val in selectors:
+                try:
+                    elements = self.driver.find_elements(by, val)
+                    for elem in elements:
+                        if elem.is_displayed() and elem.is_enabled():
+                            elem.click()
+                            logger.info(f"   🎯 通过content-desc找到并点击视频tab: {by}={val}")
+                            return True
+                except:
+                    continue
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"   策略2失败: {e}")
+            return False
+
+    def _switch_by_tab_layout(self) -> bool:
+        """策略3: 通过Tab栏布局特征查找视频tab"""
+        try:
+            # 获取屏幕尺寸
+            window_size = self.driver.get_window_size()
+            tab_y = int(window_size['height'] * 0.12)  # Tab栏约在12%高度位置
+
+            logger.info(f"   📏 Tab栏预期Y坐标: {tab_y}")
+
+            # 查找Tab栏区域的所有可点击元素
+            # 通常Tab栏在搜索框下方，水平排列
+            tab_elements = self.driver.find_elements(By.XPATH,
+                "//android.widget.TextView | //android.widget.Button | //android.widget.FrameLayout")
+
+            logger.info(f"   🔍 找到 {len(tab_elements)} 个潜在tab元素")
+
+            # 筛选出位于Tab栏区域的元素
+            valid_tabs = []
+            for i, elem in enumerate(tab_elements):
+                try:
+                    if not elem.is_displayed() or not elem.is_enabled():
+                        continue
+
+                    location = elem.location
+                    # 判断元素是否在Tab栏区域（y坐标附近，屏幕上半部分）
+                    if abs(location['y'] - tab_y) < 50:  # 允许50像素误差
+                        text = elem.get_attribute('text') or elem.get_attribute('content-desc') or ''
+                        if text and len(text) <= 10:  # Tab文本通常很短
+                            valid_tabs.append((elem, text, location))
+                            logger.debug(f"   📑 Tab {i}: '{text}' at ({location['x']}, {location['y']})")
+                except:
+                    continue
+
+            logger.info(f"   📑 找到 {len(valid_tabs)} 个有效tab")
+
+            # 在找到的tab中查找"视频"
+            for elem, text, location in valid_tabs:
+                if '视频' in text or 'Video' in text:
+                    elem.click()
+                    logger.info(f"   🎯 通过Tab布局找到并点击视频tab: {text}")
+                    return True
+
+            # 如果没找到视频，打印所有找到的tab
+            if valid_tabs:
+                tab_texts = [text for _, text, _ in valid_tabs]
+                logger.info(f"   ❌ 未找到视频tab，当前tab列表: {tab_texts}")
+
+                # 智能猜测：如果包含"综合"，尝试点击下一个tab
+                for i, (_, text, _) in enumerate(valid_tabs):
+                    if '综合' in text or '全部' in text:
+                        if i + 1 < len(valid_tabs):
+                            next_tab = valid_tabs[i + 1][0]
+                            next_text = valid_tabs[i + 1][1]
+                            logger.info(f"   🤖 智能尝试：点击'综合'后面的tab: {next_text}")
+                            next_tab.click()
+                            time.sleep(0.5)
+                            if self._verify_video_tab():
+                                return True
+                            break
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"   策略3失败: {e}")
+            return False
+
+    def _switch_fallback(self) -> bool:
+        """备用方案：在可能的位置尝试点击"""
+        try:
+            logger.info("   🔄 使用备用方案：尝试常见位置...")
+
+            window_size = self.driver.get_window_size()
+            width = window_size['width']
+            height = window_size['height']
+
+            # 视频tab的常见位置（从左到右的几个可能位置）
+            positions = [
+                0.20,  # 第1个位置
+                0.35,  # 第2个位置
+                0.50,  # 第3个位置
+                0.65,  # 第4个位置
+                0.80   # 第5个位置
+            ]
+
+            tab_y = int(height * 0.12)
+
+            for i, pos_x in enumerate(positions):
+                x = int(width * pos_x)
+                logger.info(f"   🎯 尝试位置 {i+1}: ({x}, {tab_y})")
+                self.driver.tap([(x, tab_y)])
+                time.sleep(0.5)
+
+                # 检查是否成功切换（可以检查页面元素特征）
+                if self._verify_video_tab():
+                    logger.info(f"   ✅ 备用方案成功，位置 {i+1}")
+                    return True
+
+                # 如果切换失败，可能需要返回原页面再尝试下一个
+                self.driver.back()
+                time.sleep(0.5)
+
+            return False
+
+        except Exception as e:
+            logger.error(f"   备用方案失败: {e}")
+            return False
+
+    def _verify_video_tab(self) -> bool:
+        """验证是否成功切换到视频tab"""
+        try:
+            # 查找视频页面的特征元素
+            # 视频页面通常有视频列表、点赞按钮等
+            video_indicators = [
+                "//android.widget.ImageView[contains(@content-desc,'点赞')]",
+                "//android.widget.ImageView[contains(@content-desc,'评论')]",
+                "//android.widget.ImageView[contains(@content-desc,'喜欢')]",
+                "//android.widget.TextView[contains(@text,'个点赞')]",
+                "//android.widget.TextView[contains(@text,'条评论')]"
+            ]
+
+            time.sleep(0.5)  # 等待页面加载
+
+            for indicator in video_indicators:
+                try:
+                    elem = self.driver.find_element(By.XPATH, indicator)
+                    if elem.is_displayed():
+                        logger.debug(f"   ✅ 检测到视频页面特征: {indicator}")
+                        return True
+                except:
+                    continue
+
+            return False
+
+        except Exception as e:
+            logger.debug(f"   验证失败: {e}")
             return False
     
     def click_grid_video(self) -> bool:
@@ -434,7 +625,7 @@ class SearchBrowseSession:
             self.driver.tap([(x, y)])
             
             logger.info("✅ 已点击视频")
-            time.sleep(3.0)  # 等待视频打开
+            time.sleep(1.5)  # 等待视频打开（缩短）
             
             return True
             
@@ -445,34 +636,19 @@ class SearchBrowseSession:
     
     def _is_in_fullscreen_mode(self) -> bool:
         """
-        验证是否真正进入了全屏视频播放模式
+        验证是否真正进入了全屏视频播放模式（极速版）
         
-        全屏模式特征：
-        1. 单个视频占据屏幕90%以上
-        2. 有点赞、收藏、评论按钮（位于屏幕右侧）
-        3. 没有搜索Tab栏
+        核心判断：点赞按钮在屏幕右侧 = 全屏模式
         
         Returns:
             bool: 是否在全屏模式
         """
         try:
-            # 关键检测：Tab栏是否消失 + 点赞按钮是否在右侧
-            
-            # 1. 检查搜索Tab栏是否存在（存在=卡片界面）
-            tab_elem = core_utils.find_element_safe(
-                By.ANDROID_UIAUTOMATOR, 
-                'new UiSelector().text("视频")',
-                timeout=1
-            )
-            if tab_elem:
-                logger.info("   ⚠️ 检测到'视频'Tab，仍在卡片界面")
-                return False
-            
-            # 2. 检查点赞按钮位置（全屏=右侧，卡片=底部或卡片内）
+            # 直接检查点赞按钮位置（最快判断方法）
             like_elem = core_utils.find_element_safe(
                 By.ANDROID_UIAUTOMATOR,
                 'new UiSelector().descriptionContains("赞")',
-                timeout=2
+                timeout=1  # 缩短超时
             )
             
             if like_elem:
@@ -480,14 +656,10 @@ class SearchBrowseSession:
                 size = self.driver.get_window_size()
                 # 全屏模式：点赞按钮在屏幕右侧 (x > 70% 屏幕宽度)
                 if location['x'] > size['width'] * 0.7:
-                    logger.info(f"   ✅ 全屏确认：点赞按钮在右侧 (x={location['x']}, 屏幕宽={size['width']})")
+                    logger.info(f"   ✅ 全屏确认：点赞按钮在右侧 (x={location['x']})")
                     return True
-                else:
-                    logger.info(f"   ⚠️ 点赞按钮位置异常 (x={location['x']}), 不在右侧")
-                    return False
-            else:
-                logger.info("   ⚠️ 未找到点赞按钮")
-                return False
+            
+            return False
             
         except Exception as e:
             logger.warning(f"   全屏检测异常: {e}")
@@ -546,28 +718,28 @@ class SearchBrowseSession:
                 logger.error("❌ 无法点击视频，停止后续操作")
                 return False
             
-            # 8. 验证是否成功进入全屏视频播放模式（关键！）
-            logger.info("\n🔍 验证是否进入全屏视频播放模式...")
-            time.sleep(2.0)  # 等待页面加载
+            # 8. 验证是否成功进入全屏视频播放模式（极速版）
+            logger.info("\n🔍 验证全屏模式...")
+            time.sleep(1.0)  # 等待页面加载（缩短）
             
-            # 最多尝试3次点击进入全屏
-            max_attempts = 3
+            # 最多尝试2次点击进入全屏
+            max_attempts = 2
             for attempt in range(max_attempts):
                 if self._is_in_fullscreen_mode():
                     logger.info("✅ 确认已进入全屏视频播放模式")
                     break
                 else:
-                    logger.warning(f"⚠️ 第{attempt+1}次：未进入全屏模式，尝试再次点击视频卡片...")
                     if attempt < max_attempts - 1:
+                        logger.warning(f"⚠️ 第{attempt+1}次：未进入全屏，再点击...")
                         self.click_grid_video()
-                        time.sleep(2.0)
+                        time.sleep(1.0)
             else:
-                logger.error("❌ 多次尝试仍未能进入全屏模式，停止后续操作")
+                logger.error("❌ 未能进入全屏模式，停止")
                 return False
             
-            # 8. 确认进入视频列表页面
+            # 确认进入视频列表页面
             logger.info("\n✅ 已进入视频列表，准备开始随机浏览...")
-            time.sleep(2.0)
+            time.sleep(1.0)  # 缩短
             
             logger.info("🎬" * 20)
             
@@ -611,15 +783,10 @@ class SearchBrowseSession:
             logger.info("-" * 40)
             
             try:
-                # 1. 检查视频类型
-                video_type = self.browse_session.detect_video_type()
-                if video_type == "unknown":
-                    logger.info("⏭️ 未知视频类型/非目标视频，跳过")
-                    core_utils.swipe_up_humanized()
-                    time.sleep(1.5)
-                    continue
+                # 搜索结果视频已经是常规视频（经过搜索→视频tab→点击卡片进入）
+                # 不需要像random_browse那样检测直播/广告，直接获取数据筛选
                 
-                # 2. 获取数据并筛选（规则来自配置）
+                # 1. 获取数据并筛选（规则来自配置）
                 likes, comments = self._get_video_stats()
                 logger.info(f"📊 视频数据: 点赞 {likes}, 评论 {comments}")
                 
@@ -631,12 +798,21 @@ class SearchBrowseSession:
                     time.sleep(1.5)
                     continue
                 
-                # 3. 值得观看 - 完整播放
+                # 3. 【去重检查】检查该视频是否已扫描过（相同产品下）
+                video_id = self._get_video_unique_id()
+                if video_id and is_video_scanned(video_id, self.current_product):
+                    logger.info(f"🔄 该视频已扫描过 (产品:{self.current_product})，跳过")
+                    self.stats["videos_skipped_duplicate"] += 1
+                    core_utils.swipe_up_humanized()
+                    time.sleep(1.5)
+                    continue
+                
+                # 4. 值得观看 - 完整播放
                 logger.info("✨ 优质视频，开始完整观看...")
                 self._watch_video_fully()
                 self.stats["videos_watched"] += 1
                 
-                # 4. 互动环节
+                # 5. 互动环节
                 # 点赞（概率来自配置）
                 if random.random() < self.prob_config['like']:
                     logger.info(f"👍 执行点赞 ({int(self.prob_config['like']*100)}%)")
@@ -645,12 +821,18 @@ class SearchBrowseSession:
                     time.sleep(1.0)
                 
                 # 评论拦截（概率来自配置）- 扫描评论区寻找目标用户
+                replies_before = self.stats["replies_sent"]
                 if random.random() < self.prob_config['comment']:
                     logger.info(f"💬 开始评论区拦截扫描 ({int(self.prob_config['comment']*100)}%)")
                     self._process_comments_deeply()
                     
                     if self.stats["replies_sent"] >= self.target_replies_goal:
                         logger.info(f"🏁 已达到目标回复 {self.target_replies_goal} 条，结束任务")
+                        # 记录到数据库后退出
+                        if video_id:
+                            new_replies = self.stats["replies_sent"] - replies_before
+                            record_scanned_video(video_id, self.current_product, 
+                                                self.current_keyword, new_replies)
                         break
                 
                 # 收藏（概率来自配置）
@@ -659,7 +841,14 @@ class SearchBrowseSession:
                     interactions.favorite_current_video()
                     time.sleep(1.0)
                 
-                # 5. 下一个视频
+                # 6. 【记录到数据库】该视频已处理完成
+                if video_id:
+                    new_replies = self.stats["replies_sent"] - replies_before
+                    record_scanned_video(video_id, self.current_product, 
+                                        self.current_keyword, new_replies)
+                    logger.info(f"   💾 已记录到数据库 (回复:{new_replies}条)")
+                
+                # 7. 下一个视频
                 logger.info("👇 视频处理完毕，切换下一个")
                 core_utils.swipe_up_humanized()
                 
@@ -688,7 +877,7 @@ class SearchBrowseSession:
                 like_elem = core_utils.find_element_safe(
                     By.ANDROID_UIAUTOMATOR, 
                     'new UiSelector().descriptionContains("赞")',
-                    timeout=2
+                    timeout=1  # 缩短超时
                 )
                 if like_elem:
                     desc = like_elem.get_attribute("content-desc") or ""
@@ -705,7 +894,7 @@ class SearchBrowseSession:
                 comment_elem = core_utils.find_element_safe(
                     By.ANDROID_UIAUTOMATOR,
                     'new UiSelector().descriptionContains("评论")',
-                    timeout=2
+                    timeout=1  # 缩短超时
                 )
                 if comment_elem:
                     desc = comment_elem.get_attribute("content-desc") or ""
@@ -791,17 +980,97 @@ class SearchBrowseSession:
         
         return likes, comments
 
-    def _watch_video_fully(self):
-        """模拟完整观看视频"""
-        # 简单策略：随机等待 15-30 秒
-        # 进阶策略：如果能获取进度条，可以更精确，但目前简单模拟即可
-        duration = random.randint(15, 30)
-        logger.info(f"   👀 观看中... (约 {duration} 秒)")
+    def _get_video_unique_id(self) -> str:
+        """
+        获取当前视频的唯一标识
         
-        # 分段等待，每5秒检查一次是否还在当前页面（防止意外跳出）
-        for _ in range(duration // 5):
-            time.sleep(5)
-            # 这里可以添加检查逻辑，目前省略
+        策略：使用稳定的视频特征信息生成哈希ID
+        - 作者昵称（稳定）
+        - 视频描述/标题（稳定）
+        - 不使用点赞数、评论数（这些会动态变化）
+        
+        Returns:
+            str: 视频唯一标识（哈希值），获取失败返回空字符串
+        """
+        import hashlib
+        
+        try:
+            author = ""
+            desc = ""
+            start_time = time.time()
+            max_lookup_seconds = 3.0  # 超过该时间直接放弃，避免长时间卡死
+
+            def lookup_expired() -> bool:
+                return (time.time() - start_time) > max_lookup_seconds
+
+            # 1. 获取作者昵称（多种选择器尝试）
+            author_selectors = [
+                'new UiSelector().resourceId("com.ss.android.ugc.aweme:id/title")',
+                'new UiSelector().resourceId("com.ss.android.ugc.aweme:id/nickname")',
+                'new UiSelector().resourceId("com.ss.android.ugc.aweme:id/user_name")',
+            ]
+            for selector in author_selectors:
+                if lookup_expired():
+                    logger.warning("   ⚠️ 获取作者超时，停止继续尝试")
+                    break
+                try:
+                    elem = core_utils.find_element_safe(
+                        By.ANDROID_UIAUTOMATOR,
+                        selector,
+                        timeout=0.3,
+                        use_cache=False
+                    )
+                    if elem and elem.text:
+                        author = elem.text.strip()
+                        break
+                except:
+                    continue
+            
+            # 2. 获取视频描述/标题（多种选择器尝试）
+            desc_selectors = [
+                'new UiSelector().resourceId("com.ss.android.ugc.aweme:id/desc")',
+                'new UiSelector().resourceId("com.ss.android.ugc.aweme:id/video_desc")',
+                'new UiSelector().resourceId("com.ss.android.ugc.aweme:id/title_container")',
+            ]
+            for selector in desc_selectors:
+                if lookup_expired():
+                    logger.warning("   ⚠️ 获取描述超时，停止继续尝试")
+                    break
+                try:
+                    elem = core_utils.find_element_safe(
+                        By.ANDROID_UIAUTOMATOR,
+                        selector,
+                        timeout=0.3,
+                        use_cache=False
+                    )
+                    if elem and elem.text:
+                        desc = elem.text.strip()[:100]  # 取前100字符
+                        break
+                except:
+                    continue
+            
+            # 3. 如果描述为空，简化处理，直接跳过（不再遍历搜索）
+            # 作者信息已经足够用于去重
+            
+            # 4. 生成哈希（必须有作者或描述）
+            if author or desc:
+                feature_str = f"author:{author}|desc:{desc}"
+                video_id = hashlib.md5(feature_str.encode()).hexdigest()[:16]
+                logger.info(f"   🆔 视频标识: {video_id} (作者:{author[:10] if author else '未知'}...)")
+                return video_id
+            else:
+                logger.info("   ⚠️ 无法获取作者或描述，跳过去重检查")
+                return ""
+                
+        except Exception as e:
+            logger.warning(f"   ❌ 获取视频ID失败: {e}")
+            return ""
+
+    def _watch_video_fully(self):
+        """模拟完整观看视频（优化版：7-20秒）"""
+        duration = random.randint(7, 20)
+        logger.info(f"   👀 观看中... ({duration}秒)")
+        time.sleep(duration)
 
     def _process_comments_deeply(self):
         """
@@ -822,8 +1091,8 @@ class SearchBrowseSession:
             comment_btn.click()
             time.sleep(2.0)
             
-            # 2. 调用评论扫描模块（LLM智能回复）
-            logger.info("   🤖 调用LLM智能回复模块...")
+            # 2. 调用评论扫描模块（预设回复）
+            logger.info("   🤖 调用评论扫描模块...")
             replies_before = len(REPLIED_COMMENTS)
             scan_comments_loop(self.driver)
             replies_after = len(REPLIED_COMMENTS)

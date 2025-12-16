@@ -1,4 +1,4 @@
-"""测试：完整的评论区扫描逻辑 + LLM智能回复"""
+"""测试：完整的评论区扫描逻辑 + 预设回复"""
 import sys
 import os
 import time
@@ -66,7 +66,7 @@ def scan_comments_loop(driver):
     logger.info("🚀 开始评论区扫描 + 自动回复")
     logger.info("="*50)
     
-    max_scrolls = 50
+    max_scrolls = 25  # 单个视频最多处理25屏
     last_page_content = ""
     comments_read = 0
     replies_sent = 0

@@ -132,7 +132,7 @@ class HotReloadConfig:
                     "fullReset": False,
                     "unicodeKeyboard": True,
                     "resetKeyboard": True,
-                    "newCommandTimeout": 60,
+                    "newCommandTimeout": 600,
                     "commandTimeouts": {"default": 60000}
                 }
             },
